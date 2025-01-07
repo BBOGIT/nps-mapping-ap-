@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const winston = require('winston');
 require('dotenv').config();
 
-// Налаштування Winston logger для виводу в консоль
+// Налаштування Winston logger для виводу в консоль та відстеження всіх операцій
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
@@ -29,9 +29,23 @@ const logger = winston.createLogger({
 });
 
 const app = express();
+const router = express.Router();
 
-// CORS middleware з логуванням
-app.use((req, res, next) => {
+router.get('/hello', (req, res) => {
+  logger.info('Health check request received');
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Налаштування multer для роботи з буфером замість файлової системи
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  }
+}).single('file');
+
+// CORS middleware з логуванням на рівні router
+router.use((req, res, next) => {
   logger.info('Incoming request', {
     method: req.method,
     path: req.path,
@@ -52,14 +66,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Налаштування multer для роботи з буфером замість файлової системи
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  }
-}).single('file');
-
+// Middleware для обробки завантаження файлів
 const uploadMiddleware = (req, res, next) => {
   upload(req, res, (err) => {
     if (err) {
@@ -128,9 +135,9 @@ async function parseCSVBuffer(buffer) {
       columns: true,
       skip_empty_lines: true,
       trim: true,
-      delimiter: ';',  // Вказуємо що розділювач - крапка з комою
-      relax_quotes: true, // Дозволяємо більш гнучку обробку лапок
-      skip_records_with_empty_values: false // Не пропускаємо рядки з пустими значеннями
+      delimiter: ';',
+      relax_quotes: true,
+      skip_records_with_empty_values: false
     }, (error, data) => {
       if (error) {
         logger.error('CSV parsing error', { error: error.message });
@@ -174,20 +181,17 @@ function transformData(data, mapping, originalHeaders) {
     mappingFields: Object.keys(mapping).length
   });
 
-  // Створюємо зворотній маппінг
   const reverseMapping = {};
   for (const [oldKey, newKey] of Object.entries(mapping)) {
     reverseMapping[newKey] = oldKey;
   }
   
-  // Створюємо шаблон об'єкту
   const template = {};
   targetFields.forEach(field => {
     template[field] = '';
   });
   
   try {
-    // Спочатку трансформуємо дані як зазвичай
     const initialTransform = data.map((row, index) => {
       const newRow = {...template};
       
@@ -201,7 +205,6 @@ function transformData(data, mapping, originalHeaders) {
       return newRow;
     });
 
-    // Знаходимо поля, які порожні у всіх записах
     const emptyFields = [];
     targetFields.forEach(field => {
       const hasValue = initialTransform.some(row => row[field] !== '');
@@ -210,7 +213,6 @@ function transformData(data, mapping, originalHeaders) {
       }
     });
 
-    // Очищуємо порожні поля з даних
     const transformedData = initialTransform.map(row => {
       const cleanedRow = {};
       Object.entries(row).forEach(([key, value]) => {
@@ -221,11 +223,9 @@ function transformData(data, mapping, originalHeaders) {
       return cleanedRow;
     });
 
-    // Збираємо дані про неспівставлені колонки з їх значеннями
     const mappedSourceColumns = new Set(Object.keys(mapping));
     const unmappedColumns = [];
     
-    // Створюємо мапу для відстеження унікальних неспівставлених колонок
     const uniqueUnmappedColumns = new Set();
     data.forEach(row => {
       Object.entries(row).forEach(([columnName, value]) => {
@@ -235,13 +235,11 @@ function transformData(data, mapping, originalHeaders) {
       });
     });
 
-    // Створюємо мапу для перейменування колонок
     const columnRenameMap = {};
     Array.from(uniqueUnmappedColumns).forEach((columnName, index) => {
       columnRenameMap[columnName] = `unmappedColumn${index + 1}`;
     });
 
-    // Збираємо значення з перейменованими колонками
     data.forEach(row => {
       Object.entries(row).forEach(([columnName, value]) => {
         if (!mappedSourceColumns.has(columnName) && value) {
@@ -267,8 +265,14 @@ function transformData(data, mapping, originalHeaders) {
   }
 }
 
-// Основний обробник файлів
-app.post('/parse-file', uploadMiddleware, async (req, res) => {
+// Тестовий роут для перевірки працездатності API
+router.get('/health', (req, res) => {
+  logger.info('Health check request received');
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Основний роут для обробки файлів
+router.post('/parse-file', uploadMiddleware, async (req, res) => {
   const startTime = Date.now();
   
   try {
@@ -286,7 +290,6 @@ app.post('/parse-file', uploadMiddleware, async (req, res) => {
     let data;
     let headers;
 
-    // Визначення типу файлу та його парсинг
     if (req.file.originalname.toLowerCase().endsWith('.csv')) {
       data = await parseCSVBuffer(req.file.buffer);
     } else if (req.file.originalname.toLowerCase().endsWith('.xlsx')) {
@@ -327,4 +330,7 @@ app.post('/parse-file', uploadMiddleware, async (req, res) => {
   }
 });
 
-module.exports.handler = serverless(app);
+app.use('/api/', router)
+
+// Експортуємо handler для Netlify
+exports.handler = serverless(app);
