@@ -127,13 +127,19 @@ async function parseCSVBuffer(buffer) {
     parse(buffer.toString(), {
       columns: true,
       skip_empty_lines: true,
-      trim: true
+      trim: true,
+      delimiter: ';',  // Вказуємо що розділювач - крапка з комою
+      relax_quotes: true, // Дозволяємо більш гнучку обробку лапок
+      skip_records_with_empty_values: false // Не пропускаємо рядки з пустими значеннями
     }, (error, data) => {
       if (error) {
         logger.error('CSV parsing error', { error: error.message });
         reject(error);
       } else {
-        logger.info('CSV parsing completed', { recordCount: data.length });
+        logger.info('CSV parsing completed', { 
+          recordCount: data.length,
+          sampleHeaders: Object.keys(data[0])
+        });
         resolve(data);
       }
     });
