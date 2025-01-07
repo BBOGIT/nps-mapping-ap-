@@ -38,7 +38,9 @@ app.use((req, res, next) => {
     origin: req.headers.origin
   });
 
-  res.header('Access-Control-Allow-Origin', 'https://meek-kitten-23c2e0.netlify.app');
+  const allowedOrigin = process.env.CORS_ORIGIN;
+
+  res.header('Access-Control-Allow-Origin', allowedOrigin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
