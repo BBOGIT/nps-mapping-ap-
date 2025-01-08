@@ -89,7 +89,6 @@ const targetFields = [
   { name: 'Online Order Number', validation: 'string' },
   { name: 'Recipient', validation: 'string' },
   { name: 'Declared Value', validation: 'decimal' },
-  { name: 'Declared Currency', validation: 'enum:USD,EUR,GBP,PLN' },
   { name: 'Invoice', validation: 'string' },
   { name: 'Tags', validation: 'array' },
   { name: 'Tracking Number', validation: 'string' },
