@@ -54,7 +54,7 @@ router.use((req, res, next) => {
 
   const allowedOrigin = process.env.CORS_ORIGIN;
 
-  res.header('Access-Control-Allow-Origin', allowedOrigin);
+  res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
@@ -217,7 +217,7 @@ function transformData(data, mapping, originalHeaders) {
     //   validation: field.validation
     // }));
     const emptyFields = targetFieldNames;
-    
+
     const mappedSourceColumns = new Set(Object.keys(mapping));
     const unmappedColumns = [];
     
