@@ -84,18 +84,21 @@ const openai = new OpenAI({
 
 // Цільові поля для маппінгу
 const targetFields = [
-  'Дата створення',
-  'Статус оплати',
-  'Номер інтернет замовлення',
-  'Отримувач',
-  'Оголошена вартість',
-  'Інвойс',
-  'Теги',
-  'Трек номер',
-  'Нотатки',
-  'Статус доставки',
-  'Країна отримання'
+  { name: 'Дата створення', validation: 'datetime' },
+  { name: 'Статус оплати', validation: 'enum:paid,pending,cancelled' },
+  { name: 'Номер інтернет замовлення', validation: 'string' },
+  { name: 'Отримувач', validation: 'string' },
+  { name: 'Оголошена вартість', validation: 'decimal' },
+  { name: 'Оголошена валюта', validation: 'enum:UAH,USD,EUR' },
+  { name: 'Інвойс', validation: 'string' },
+  { name: 'Теги', validation: 'array' },
+  { name: 'Трек номер', validation: 'string' },
+  { name: 'Нотатки', validation: 'string' },
+  { name: 'Статус доставки', validation: 'enum:pending,in_transit,delivered,failed' },
+  { name: 'Країна отримання', validation: 'string' }
 ];
+
+const targetFieldNames = targetFields.map(field => field.name);
 
 // Функція для отримання маппінгу колонок через GPT-4
 async function getColumnMapping(headers) {
@@ -103,12 +106,13 @@ async function getColumnMapping(headers) {
   
   const prompt = `Я маю CSV/Excel файл з наступними заголовками колонок: ${headers.join(', ')}
   
-Мені потрібно зіставити ці заголовки з наступними цільовими полями:
-${targetFields.join('\n')}
-
-Надай відповідь у форматі JSON, де ключі - це заголовки з файлу, а значення - це відповідні цільові поля.
-Якщо для якогось заголовка немає відповідного цільового поля, або ти не впевнений у відповідності - пропусти його.
-Поверни тільки ті поля, у відповідності яких ти впевнений на 100%.`;
+  Мені потрібно зіставити ці заголовки з наступними цільовими полями та їх правилами валідації:
+  ${targetFields.map(field => `${field.name} (${field.validation})`).join('\n')}
+  
+  Надай відповідь у форматі JSON, де ключі - це заголовки з файлу, а значення - це відповідні цільові поля.
+  Якщо для якогось заголовка немає відповідного цільового поля, або ти не впевнений у відповідності - пропусти його.
+  Поверни тільки ті поля, у відповідності яких ти впевнений на 100%.`;
+  
 
   try {
     const completion = await openai.chat.completions.create({
@@ -178,7 +182,7 @@ function parseExcelBuffer(buffer) {
 function transformData(data, mapping, originalHeaders) {
   logger.info('Starting data transformation', { 
     recordCount: data.length,
-    mappingFields: Object.keys(mapping).length
+    mappingFields: Object.entries(mapping).length
   });
 
   const reverseMapping = {};
@@ -186,16 +190,18 @@ function transformData(data, mapping, originalHeaders) {
     reverseMapping[newKey] = oldKey;
   }
   
+  // Створюємо шаблон з усіма цільовими полями
   const template = {};
-  targetFields.forEach(field => {
+  targetFieldNames.forEach(field => {
     template[field] = '';
   });
   
   try {
-    const initialTransform = data.map((row, index) => {
+    // Трансформуємо дані, зберігаючи всі поля незалежно від їх заповненості
+    const transformedData = data.map((row, index) => {
       const newRow = {...template};
       
-      for (const targetField of targetFields) {
+      for (const targetField of targetFieldNames) {
         const sourceField = reverseMapping[targetField];
         if (sourceField && row[sourceField] !== undefined) {
           newRow[targetField] = row[sourceField]?.toString().trim() || '';
@@ -205,23 +211,11 @@ function transformData(data, mapping, originalHeaders) {
       return newRow;
     });
 
-    const emptyFields = [];
-    targetFields.forEach(field => {
-      const hasValue = initialTransform.some(row => row[field] !== '');
-      if (!hasValue) {
-        emptyFields.push(field);
-      }
-    });
-
-    const transformedData = initialTransform.map(row => {
-      const cleanedRow = {};
-      Object.entries(row).forEach(([key, value]) => {
-        if (!emptyFields.includes(key)) {
-          cleanedRow[key] = value;
-        }
-      });
-      return cleanedRow;
-    });
+    // Повертаємо всі цільові поля як emptyFields
+    const emptyFields = targetFields.map(field => ({
+      name: field.name,
+      validation: field.validation
+    }));
 
     const mappedSourceColumns = new Set(Object.keys(mapping));
     const unmappedColumns = [];
