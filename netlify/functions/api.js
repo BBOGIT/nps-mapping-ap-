@@ -84,18 +84,18 @@ const openai = new OpenAI({
 
 // Цільові поля для маппінгу
 const targetFields = [
-  { name: 'Дата створення', validation: 'datetime' },
-  { name: 'Статус оплати', validation: 'enum:paid,pending,cancelled' },
-  { name: 'Номер інтернет замовлення', validation: 'string' },
-  { name: 'Отримувач', validation: 'string' },
-  { name: 'Оголошена вартість', validation: 'decimal' },
-  { name: 'Оголошена валюта', validation: 'enum:UAH,USD,EUR' },
-  { name: 'Інвойс', validation: 'string' },
-  { name: 'Теги', validation: 'array' },
-  { name: 'Трек номер', validation: 'string' },
-  { name: 'Нотатки', validation: 'string' },
-  { name: 'Статус доставки', validation: 'enum:pending,in_transit,delivered,failed' },
-  { name: 'Країна отримання', validation: 'string' }
+  { name: 'Creation Date', validation: 'datetime' },
+  { name: 'Payment Status', validation: 'enum:paid,pending,cancelled' },
+  { name: 'Online Order Number', validation: 'string' },
+  { name: 'Recipient', validation: 'string' },
+  { name: 'Declared Value', validation: 'decimal' },
+  { name: 'Declared Currency', validation: 'enum:USD,EUR,GBP,PLN' },
+  { name: 'Invoice', validation: 'string' },
+  { name: 'Tags', validation: 'array' },
+  { name: 'Tracking Number', validation: 'string' },
+  { name: 'Notes', validation: 'string' },
+  { name: 'Delivery Status', validation: 'enum:pending,in_transit,delivered,failed' },
+  { name: 'Destination Country', validation: 'string' }
 ];
 
 const targetFieldNames = targetFields.map(field => field.name);
