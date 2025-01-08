@@ -212,11 +212,12 @@ function transformData(data, mapping, originalHeaders) {
     });
 
     // Повертаємо всі цільові поля як emptyFields
-    const emptyFields = targetFields.map(field => ({
-      name: field.name,
-      validation: field.validation
-    }));
-
+    // const emptyFields = targetFields.map(field => ({
+    //   name: field.name,
+    //   validation: field.validation
+    // }));
+    const emptyFields = targetFieldNames;
+    
     const mappedSourceColumns = new Set(Object.keys(mapping));
     const unmappedColumns = [];
     
