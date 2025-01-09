@@ -90,7 +90,7 @@ const targetFields = [
   { name: 'Recipient', validation: 'string' },
   { name: 'Declared Value', validation: 'decimal' },
   { name: 'Invoice', validation: 'string' },
-  { name: 'Tags', validation: 'array' },
+  { name: 'Phone number', validation: 'phone number' },
   { name: 'Tracking Number', validation: 'string' },
   { name: 'Notes', validation: 'string' },
   { name: 'Delivery Status', validation: 'enum:pending,in_transit,delivered,failed' },
@@ -320,6 +320,140 @@ router.post('/parse-file', uploadMiddleware, async (req, res) => {
     res.status(500).json({
       error: error.message,
       details: 'Виникла помилка при обробці файлу'
+    });
+  }
+});
+
+// Функція для створення Excel файлу з даних
+function createExcelBuffer(jsonData) {
+  logger.info('Starting Excel file creation', { recordCount: jsonData.length });
+  
+  try {
+    const worksheet = XLSX.utils.json_to_sheet(jsonData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    
+    const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    
+    logger.info('Excel file creation completed', { 
+      sizeBytes: excelBuffer.length
+    });
+    
+    return excelBuffer;
+  } catch (error) {
+    logger.error('Excel file creation error', { error: error.message });
+    throw error;
+  }
+}
+
+// Middleware для парсингу JSON body
+const jsonParser = express.json({
+  limit: '10mb'
+});
+
+// Endpoint для збереження даних з шаблоном
+router.post('/parse-file/save/templates', jsonParser, async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    if (!req.body || !req.body.data) {
+      logger.error('No data provided');
+      throw new Error('Дані не було надано');
+    }
+
+    const { data, templateName } = req.body;
+    
+    if (!Array.isArray(data)) {
+      logger.error('Invalid data format', { receivedType: typeof data });
+      throw new Error('Дані мають неправильний формат');
+    }
+    
+    if (!templateName) {
+      logger.error('Template name not provided');
+      throw new Error('Назва шаблону відсутня');
+    }
+
+    logger.info('Processing template save request', { 
+      templateName,
+      recordCount: data.length
+    });
+
+    const excelBuffer = createExcelBuffer(data);
+    
+    // Встановлюємо заголовки для завантаження файлу
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${templateName}.xlsx"`);
+    
+    const processingTime = Date.now() - startTime;
+    logger.info('Template save request completed successfully', { 
+      processingTimeMs: processingTime,
+      templateName,
+      recordCount: data.length,
+      sizeBytes: excelBuffer.length
+    });
+
+    res.send(excelBuffer);
+
+  } catch (error) {
+    logger.error('Template save request failed', { 
+      error: error.message,
+      stack: error.stack,
+      processingTimeMs: Date.now() - startTime
+    });
+
+    res.status(500).json({
+      error: error.message,
+      details: 'Виникла помилка при створенні Excel файлу з шаблоном'
+    });
+  }
+});
+
+// Endpoint для збереження даних без шаблону
+router.post('/parse-file/save', jsonParser, async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    if (!req.body || !req.body.data) {
+      logger.error('No data provided');
+      throw new Error('Дані не було надано');
+    }
+
+    const { data } = req.body;
+    
+    if (!Array.isArray(data)) {
+      logger.error('Invalid data format', { receivedType: typeof data });
+      throw new Error('Дані мають неправильний формат');
+    }
+
+    logger.info('Processing save request', { 
+      recordCount: data.length
+    });
+
+    const excelBuffer = createExcelBuffer(data);
+    
+    // Встановлюємо заголовки для завантаження файлу
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="data.xlsx"');
+    
+    const processingTime = Date.now() - startTime;
+    logger.info('Save request completed successfully', { 
+      processingTimeMs: processingTime,
+      recordCount: data.length,
+      sizeBytes: excelBuffer.length
+    });
+
+    res.send(excelBuffer);
+
+  } catch (error) {
+    logger.error('Save request failed', { 
+      error: error.message,
+      stack: error.stack,
+      processingTimeMs: Date.now() - startTime
+    });
+
+    res.status(500).json({
+      error: error.message,
+      details: 'Виникла помилка при створенні Excel файлу'
     });
   }
 });

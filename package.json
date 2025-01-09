@@ -1,6 +1,6 @@
 {
   "name": "nps-file-mapper",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
