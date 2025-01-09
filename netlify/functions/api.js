@@ -325,6 +325,7 @@ router.post('/parse-file', uploadMiddleware, async (req, res) => {
 });
 
 // Функція для створення Excel файлу з даних
+// Функція для створення Excel файлу з даних
 function createExcelBuffer(jsonData) {
   logger.info('Starting Excel file creation', { recordCount: jsonData.length });
   
@@ -339,7 +340,8 @@ function createExcelBuffer(jsonData) {
       sizeBytes: excelBuffer.length
     });
     
-    return excelBuffer;
+    // Конвертуємо buffer в base64 для передачі через Netlify
+    return excelBuffer.toString('base64');
   } catch (error) {
     logger.error('Excel file creation error', { error: error.message });
     throw error;
@@ -378,21 +380,20 @@ router.post('/parse-file/save/templates', jsonParser, async (req, res) => {
       recordCount: data.length
     });
 
-    const excelBuffer = createExcelBuffer(data);
-    
-    // Встановлюємо заголовки для завантаження файлу
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${templateName}.xlsx"`);
+    const base64Data = createExcelBuffer(data);
     
     const processingTime = Date.now() - startTime;
     logger.info('Template save request completed successfully', { 
       processingTimeMs: processingTime,
       templateName,
-      recordCount: data.length,
-      sizeBytes: excelBuffer.length
+      recordCount: data.length
     });
 
-    res.send(excelBuffer);
+    res.json({
+      data: base64Data,
+      filename: `${templateName}.xlsx`,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
 
   } catch (error) {
     logger.error('Template save request failed', { 
@@ -429,20 +430,19 @@ router.post('/parse-file/save', jsonParser, async (req, res) => {
       recordCount: data.length
     });
 
-    const excelBuffer = createExcelBuffer(data);
-    
-    // Встановлюємо заголовки для завантаження файлу
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="data.xlsx"');
+    const base64Data = createExcelBuffer(data);
     
     const processingTime = Date.now() - startTime;
     logger.info('Save request completed successfully', { 
       processingTimeMs: processingTime,
-      recordCount: data.length,
-      sizeBytes: excelBuffer.length
+      recordCount: data.length
     });
 
-    res.send(excelBuffer);
+    res.json({
+      data: base64Data,
+      filename: 'data.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
 
   } catch (error) {
     logger.error('Save request failed', { 
