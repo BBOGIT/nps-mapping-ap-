@@ -1,6 +1,6 @@
 {
   "name": "nps-file-mapper",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@netlify/functions": "^2.8.2",
+    "axios": "^1.7.9",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.3",
     "dotenv": "^16.4.1",

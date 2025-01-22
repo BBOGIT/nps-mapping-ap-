@@ -5,6 +5,7 @@ const { parse } = require('csv-parse');
 const XLSX = require('xlsx');
 const OpenAI = require('openai');
 const winston = require('winston');
+const axios = require('axios');
 require('dotenv').config();
 
 // Налаштування Winston logger для виводу в консоль та відстеження всіх операцій
@@ -84,20 +85,121 @@ const openai = new OpenAI({
 
 // Цільові поля для маппінгу
 const targetFields = [
-  { name: 'Creation Date', validation: 'datetime' },
-  { name: 'Payment Status', validation: 'enum:paid,pending,cancelled' },
-  { name: 'Online Order Number', validation: 'string' },
-  { name: 'Recipient', validation: 'string' },
-  { name: 'Declared Value', validation: 'decimal' },
-  { name: 'Invoice', validation: 'string' },
-  { name: 'Phone number', validation: 'phone number' },
-  { name: 'Tracking Number', validation: 'string' },
-  { name: 'Notes', validation: 'string' },
-  { name: 'Delivery Status', validation: 'enum:pending,in_transit,delivered,failed' },
-  { name: 'Destination Country', validation: 'string' }
+  { name: 'IEW number', validation: 'string' },
+  { name: 'Sender type', validation: 'enum:1,2' },
+  { name: 'Sender full name', validation: 'string' },
+  { name: 'Sender contact name', validation: 'string' },
+  { name: 'Sender phones', validation: 'phone' },
+  { name: 'Sender email', validation: 'email' },
+  { name: 'Sender postcode', validation: 'postcode' },
+  { name: 'Sender country', validation: 'string' },
+  { name: 'Sender region', validation: 'string' },
+  { name: 'Sender city', validation: 'string' },
+  { name: 'Sender address', validation: 'string' },
+  { name: 'street', validation: 'string' },
+  { name: 'house', validation: 'string' },
+  { name: 'appartment', validation: 'string' },
+  { name: 'Cost (TOP)', validation: 'decimal' },
+  { name: 'Currency (TOP)', validation: 'string' },
+  { name: 'Receiver type', validation: 'enum:1,2' },
+  { name: 'Receiver full name', validation: 'string' },
+  { name: 'Receiver contact name', validation: 'string' },
+  { name: 'Receiver phones', validation: 'phone' },
+  { name: 'Receiver email', validation: 'email' },
+  { name: 'Receiver postcode', validation: 'postcode' },
+  { name: 'Receiver country', validation: 'string' },
+  { name: 'Receiver region', validation: 'string' },
+  { name: 'Receiver city', validation: 'string' },
+  { name: 'Receiver address', validation: 'string' },
+  { name: 'street', validation: 'string' },
+  { name: 'house', validation: 'string' },
+  { name: 'appartment', validation: 'string' },
+  { name: 'IOSS number', validation: 'string' },
+  { name: 'Incoterms', validation: 'string' },
+  { name: 'Invoice description', validation: 'string' },
+  { name: 'Full description', validation: 'string' },
+  { name: 'Place description', validation: 'string' },
+  { name: 'Actual weight, kg', validation: 'decimal' },
+  { name: 'Related order', validation: 'string' },
+  { name: 'Receiver postcode', validation: 'postcode' },
+  { name: 'Receiver country', validation: 'string' },
+  { name: 'Receiver region', validation: 'string' },
+  { name: 'Receiver city', validation: 'string' },
+  { name: 'Receiver address', validation: 'string' }
 ];
 
 const targetFieldNames = targetFields.map(field => field.name);
+
+// Function to get product name column from GPT
+async function getProductNameColumn(headers) {
+  logger.info('Requesting product name column identification from GPT-4', { headers });
+  
+  const prompt = `I have a CSV/Excel file with the following column headers: ${headers.join(', ')}
+  
+  I need to identify which column contains product names or product descriptions.
+  Respond with a JSON object containing a single key 'productColumn' with the exact header name that represents product names.
+  If you're not sure or can't find a product name column, respond with null.`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" }
+    });
+
+    const result = JSON.parse(completion.choices[0].message.content);
+    logger.info('Received product column identification', { result });
+    return result.productColumn;
+  } catch (error) {
+    logger.error('GPT-4 API error during product column identification', { error: error.message });
+    throw new Error('Error identifying product name column');
+  }
+}
+
+// Function to fetch HS code for a product name
+async function getHSCode(productName) {
+    try {
+      // Parse API configuration from environment variable
+      const apiConfig = JSON.parse(process.env.HS_CODE_API_CONFIG);
+      
+      // Make request to HS code API with basic auth
+      const response = await axios({
+        method: 'post',
+        url: `${apiConfig.host}/api/v1/hscodes`,
+        data: {
+          productName
+        },
+        auth: {
+          username: apiConfig.username,
+          password: apiConfig.password
+        },
+        validateStatus: function (status) {
+          return status >= 200 && status < 500; // Don't reject if status is 404
+        }
+      });
+      
+      // Return empty string for 404 or any error response
+      if (response.status === 404 || !response.data || response.status >= 400) {
+        logger.warn('HS code not found or error response', { 
+          productName,
+          status: response.status 
+        });
+        return '';
+      }
+      
+    //   logger.warn('HS code response', { 
+    //     responseData: response.data
+    //   });
+
+      return response.data.data.hsCode || '';
+    } catch (error) {
+      logger.error('HS code API error', { 
+        productName, 
+        error: error.message 
+      });
+      return ''; // Return empty string for any error
+    }
+  }
 
 // Функція для отримання маппінгу колонок через GPT-4
 async function getColumnMapping(headers) {
@@ -178,28 +280,35 @@ function parseExcelBuffer(buffer) {
 }
 
 // Функція для перейменування колонок і забезпечення однакової структури
-function transformData(data, mapping, originalHeaders) {
-  logger.info('Starting data transformation', { 
-    recordCount: data.length,
-    mappingFields: Object.entries(mapping).length
-  });
+async function transformData(data, mapping, originalHeaders) {
+  logger.info('Starting data transformation with HS code lookup');
 
+  // Get product name column
+  const productColumn = await getProductNameColumn(originalHeaders);
+  if (!productColumn) {
+    logger.warn('No product name column identified');
+  }
+
+  // Create reverse mapping and template as before
   const reverseMapping = {};
   for (const [oldKey, newKey] of Object.entries(mapping)) {
     reverseMapping[newKey] = oldKey;
   }
   
-  // Створюємо шаблон з усіма цільовими полями
   const template = {};
   targetFieldNames.forEach(field => {
     template[field] = '';
   });
   
   try {
-    // Трансформуємо дані, зберігаючи всі поля незалежно від їх заповненості
-    const transformedData = data.map((row, index) => {
+    // Track all HS codes for the separate column
+    const hsCodesColumn = [];
+
+    // Transform data and fetch HS codes
+    const transformedData = await Promise.all(data.map(async (row, index) => {
       const newRow = {...template};
       
+      // Map fields as before
       for (const targetField of targetFieldNames) {
         const sourceField = reverseMapping[targetField];
         if (sourceField && row[sourceField] !== undefined) {
@@ -207,20 +316,33 @@ function transformData(data, mapping, originalHeaders) {
         }
       }
       
+      // Add HS code if product column was found
+      if (productColumn && row[productColumn]) {
+        const hsCode = await getHSCode(row[productColumn]);
+        newRow['HS_Code'] = hsCode || '';
+        
+        // Add to hsCodesColumn array
+        hsCodesColumn.push({
+          productName: row[productColumn],
+          hsCode: hsCode || '',
+          rowIndex: index
+        });
+        
+        logger.info('Retrieved HS code', {
+          productName: row[productColumn],
+          hsCode,
+          rowIndex: index
+        });
+      }
+      
       return newRow;
-    });
+    }));
 
-    // Повертаємо всі цільові поля як emptyFields
-    // const emptyFields = targetFields.map(field => ({
-    //   name: field.name,
-    //   validation: field.validation
-    // }));
-    const emptyFields = targetFieldNames;
-
+    // Get unmapped columns and empty fields as before
     const mappedSourceColumns = new Set(Object.keys(mapping));
     const unmappedColumns = [];
-    
     const uniqueUnmappedColumns = new Set();
+    
     data.forEach(row => {
       Object.entries(row).forEach(([columnName, value]) => {
         if (!mappedSourceColumns.has(columnName) && value) {
@@ -242,16 +364,17 @@ function transformData(data, mapping, originalHeaders) {
       });
     });
 
-    logger.info('Data transformation completed', { 
+    logger.info('Data transformation with HS codes completed', { 
       transformedCount: transformedData.length,
       unmappedCount: unmappedColumns.length,
-      emptyFieldsCount: emptyFields.length
     });
     
     return {
       transformedData,
       unmappedColumns,
-      emptyFields
+      emptyFields: targetFieldNames,
+      productColumn, // Return the identified product column name
+      hsCodesColumn // Return the array of HS codes with their corresponding products
     };
   } catch (error) {
     logger.error('Data transformation error', { error: error.message });
@@ -265,64 +388,68 @@ router.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Основний роут для обробки файлів
+// Modified parse-file endpoint to include the new functionality
 router.post('/parse-file', uploadMiddleware, async (req, res) => {
-  const startTime = Date.now();
+    const startTime = Date.now();
+    
+    try {
+      if (!req.file) {
+        logger.error('No file uploaded');
+        throw new Error('File was not uploaded');
+      }
   
-  try {
-    if (!req.file) {
-      logger.error('No file uploaded');
-      throw new Error('Файл не було завантажено');
+      logger.info('File received', { 
+        filename: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      });
+  
+      let data;
+      let headers;
+  
+      if (req.file.originalname.toLowerCase().endsWith('.csv')) {
+        data = await parseCSVBuffer(req.file.buffer);
+      } else if (req.file.originalname.toLowerCase().endsWith('.xlsx')) {
+        data = parseExcelBuffer(req.file.buffer);
+      } else {
+        throw new Error('Unsupported file type. Only CSV and XLSX formats are supported.');
+      }
+  
+      headers = Object.keys(data[0]);
+      const mapping = await getColumnMapping(headers);
+      const { transformedData, unmappedColumns, emptyFields, productColumn, hsCodesColumn } = await transformData(data, mapping, headers);
+  
+      const processingTime = Date.now() - startTime;
+      logger.info('Request completed successfully', { 
+        processingTimeMs: processingTime,
+        recordsProcessed: transformedData.length,
+        unmappedCount: unmappedColumns.length,
+        emptyFieldsCount: emptyFields.length,
+        productColumn
+      });
+  
+      res.json({
+        data: transformedData,
+        unmappedColumns,
+        emptyFields
+        // productColumn
+       // hsCodesColumn // Include HS codes in the response
+      });
+  
+    } catch (error) {
+      logger.error('Request failed', { 
+        error: error.message,
+        stack: error.stack,
+        processingTimeMs: Date.now() - startTime
+      });
+  
+      res.status(500).json({
+        error: error.message,
+        details: 'An error occurred while processing the file'
+      });
     }
-
-    logger.info('File received', { 
-      filename: req.file.originalname,
-      size: req.file.size,
-      mimetype: req.file.mimetype
-    });
-
-    let data;
-    let headers;
-
-    if (req.file.originalname.toLowerCase().endsWith('.csv')) {
-      data = await parseCSVBuffer(req.file.buffer);
-    } else if (req.file.originalname.toLowerCase().endsWith('.xlsx')) {
-      data = parseExcelBuffer(req.file.buffer);
-    } else {
-      throw new Error('Непідтримуваний тип файлу. Підтримуються лише CSV та XLSX формати.');
-    }
-
-    headers = Object.keys(data[0]);
-    const mapping = await getColumnMapping(headers);
-    const { transformedData, unmappedColumns, emptyFields } = transformData(data, mapping, headers);
-
-    const processingTime = Date.now() - startTime;
-    logger.info('Request completed successfully', { 
-      processingTimeMs: processingTime,
-      recordsProcessed: transformedData.length,
-      unmappedCount: unmappedColumns.length,
-      emptyFieldsCount: emptyFields.length
-    });
-
-    res.json({
-      data: transformedData,
-      unmappedColumns,
-      emptyFields
-    });
-
-  } catch (error) {
-    logger.error('Request failed', { 
-      error: error.message,
-      stack: error.stack,
-      processingTimeMs: Date.now() - startTime
-    });
-
-    res.status(500).json({
-      error: error.message,
-      details: 'Виникла помилка при обробці файлу'
-    });
-  }
-});
+  });
+  
 
 // Функція для створення Excel файлу з даних
 // Функція для створення Excel файлу з даних
